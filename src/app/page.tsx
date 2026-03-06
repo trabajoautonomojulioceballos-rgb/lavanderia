@@ -1,41 +1,106 @@
 'use client'
 import { useEffect, useState } from 'react'
+import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 
+interface Service {
+  id: string
+  name: string
+  price_per_unit: number
+  unit_type: string
+}
+
 export default function LandingPage() {
-  const [services, setServices] = useState<any[]>([])
+  const [services, setServices] = useState<Service[]>([]) // 👈 Usamos la Interfaz
+  const [isAdmin, setIsAdmin] = useState(false)
+  const [user, setUser] = useState<any>(null)
+  const router = useRouter()
 
   useEffect(() => {
-    const fetchServices = async () => {
-      const { data } = await supabase.from('services').select('*')
-      if (data) setServices(data)
+    const getData = async () => {
+      const { data: servicesData } = await supabase.from('services').select('*')
+      if (servicesData) setServices(servicesData as Service[])
+
+      const { data: { user: currentUser } } = await supabase.auth.getUser()
+      if (currentUser) {
+        setUser(currentUser)
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('is_admin')
+          .eq('id', currentUser.id)
+          .single()
+        
+        if (profile?.is_admin) setIsAdmin(true)
+      }
     }
-    fetchServices()
+    getData()
   }, [])
+
+  const handleLogout = async () => {
+    await supabase.auth.signOut()
+    setUser(null)
+    setIsAdmin(false)
+    router.refresh() // Limpia la caché de Next.js
+  }
 
   const handleOrder = async (serviceId: string) => {
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) return alert("Por favor, inicia sesión para pedir.")
+    
+    // Si no está logueado, lo mandamos al login
+    if (!user) {
+      alert("Para solicitar un servicio, primero crea tu cuenta. ✨")
+      router.push('/login')
+      return
+    }
 
-    // IMPORTANTE: Asegúrate que la columna se llame 'service_id' como en tu DB
     const { error } = await supabase.from('orders').insert([
-      { user_id: user.id, service_id: serviceId, status: 'PENDING' }
+      { 
+        user_id: user.id, 
+        service_id: serviceId, 
+        status: 'PENDING' 
+      }
     ])
 
-    if (error) alert("Error: " + error.message)
-    else alert("¡Orden recibida! ✨ En breve pasamos por tu ropa.")
+    if (error) {
+      alert("Error: " + error.message)
+    } else {
+      alert("¡Orden recibida! ✨ En breve pasamos por tu ropa.")
+    }
+    // Se eliminó el bloque duplicado que estaba aquí
   }
 
-  return (
+return (
     <div className="min-h-screen bg-white">
       {/* --- NAVBAR --- */}
       <nav className="flex justify-between items-center px-8 py-6 max-w-7xl mx-auto">
-        <div className="text-2xl font-black tracking-tighter text-blue-600">IVY.</div>
-        <div className="space-x-8 text-sm font-bold text-slate-600">
+        <div className="text-2xl font-black tracking-tighter text-blue-600 italic">IVY.</div>
+        
+        <div className="flex items-center gap-8 text-sm font-bold text-slate-600">
+          {/* BOTÓN SECRETO: Solo aparece si isAdmin es true */}
+          {isAdmin && (
+            <a href="/admin" className="text-blue-600 bg-blue-50 px-4 py-2 rounded-xl hover:bg-blue-100 transition flex items-center gap-2">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-blue-500"></span>
+              </span>
+              Panel Admin ⚙️
+            </a>
+          )}
+
           <a href="/tracking" className="hover:text-blue-600 transition">Mis Pedidos</a>
-          <button className="bg-slate-900 text-white px-5 py-2.5 rounded-full hover:bg-slate-800 transition">
-            Iniciar Sesión
-          </button>
+          
+          {user ? (
+            <button 
+              onClick={() => supabase.auth.signOut().then(() => window.location.reload())}
+              className="text-slate-400 hover:text-red-500 transition"
+            >
+              Salir
+            </button>
+          ) : (
+            <a href="/login" className="bg-slate-900 text-white px-5 py-2.5 rounded-full hover:bg-slate-800 transition">
+              Iniciar Sesión
+            </a>
+          )}
         </div>
       </nav>
 
